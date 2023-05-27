@@ -33,10 +33,11 @@ export class AdSyncProcessesOptimizer extends AdSyncOptimizer implements AdSyncP
   constructor(
     mailboxes: ImapSyncSessionMailbox[],
     optimizationDifference: number,
+    optimizationInterval: number,
     syncSessionEventListener: SyncSessionEventListener,
     adSyncLogger: AdSyncLogger
   ) {
-    super(optimizationDifference);
+    super(optimizationDifference, optimizationInterval);
     this.optimizedSyncSessionMailboxes = mailboxes;
     this.syncSessionEventListener = syncSessionEventListener;
     this.adSyncLogger = adSyncLogger;
@@ -67,7 +68,7 @@ export class AdSyncProcessesOptimizer extends AdSyncOptimizer implements AdSyncP
       let mailboxToDrop = this.runningProcessMap.get(processId);
       if (mailboxToDrop) {
         let timeToLiveIntervalMS =
-          1000 * (mailboxToDrop.syncSessionMailbox?.timeToLiveInterval ? mailboxToDrop.syncSessionMailbox?.timeToLiveInterval : 0); // conversion to milliseconds
+          1000 * (mailboxToDrop.syncSessionMailbox?.timeToLive ? mailboxToDrop.syncSessionMailbox?.timeToLive : 0); // conversion to milliseconds
 
         // a process may run at least its timeToLiveInterval in seconds
         if (mailboxToDrop.processStartTime + timeToLiveIntervalMS <= Date.now()) {

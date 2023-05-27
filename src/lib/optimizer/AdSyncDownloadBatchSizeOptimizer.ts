@@ -9,8 +9,8 @@ export class AdSyncDownloadBatchSizeOptimizer extends AdSyncOptimizer {
 	protected scheduler?: NodeJS.Timer
 	protected adSyncLogger: AdSyncLogger
 
-	constructor(syncSessionMailbox: ImapSyncSessionMailbox, optimizationDifference: number, adSyncLogger: AdSyncLogger) {
-		super(optimizationDifference)
+	constructor(syncSessionMailbox: ImapSyncSessionMailbox, optimizationDifference: number, optimizationInterval: number, adSyncLogger: AdSyncLogger) {
+		super(optimizationDifference, optimizationInterval)
 		this._optimizedSyncSessionMailbox = syncSessionMailbox
 		this.adSyncLogger = adSyncLogger
 	}

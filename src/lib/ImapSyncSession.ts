@@ -11,259 +11,261 @@ import { AdSyncProcessesOptimizer } from './optimizer/processesoptimizer/AdSyncP
 import { AdSyncLogger, LogSourceType } from './utils/AdSyncLogger.js';
 import { AdSyncConfig } from '../ImapAdSync.js';
 
-const DOWNLOADED_QUOTA_SAFETY_THRESHOLD: number = 50000000 // in byte
-const DEFAULT_POSTPONE_TIME: number = 24 * 60 * 60 * 1000 // 24 hours
-const ERROR_POSTPONE_TIME: number = 60 * 1000 // 60 seconds
+const DOWNLOADED_QUOTA_SAFETY_THRESHOLD: number = 50000000; // in byte
+const DEFAULT_POSTPONE_TIME: number = 24 * 60 * 60 * 1000; // 24 hours
+const ERROR_POSTPONE_TIME: number = 60 * 1000; // 60 seconds
 
 export enum SyncSessionState {
-	RUNNING,
-	PAUSED,
-	POSTPONED,
-	FINISHED,
+  RUNNING,
+  PAUSED,
+  POSTPONED,
+  FINISHED,
 }
 
 export interface SyncSessionEventListener {
-	onStartSyncSessionProcess(processId: number, syncSessionMailbox: ImapSyncSessionMailbox): void
+  onStartSyncSessionProcess(processId: number, syncSessionMailbox: ImapSyncSessionMailbox): void;
 
-	onStopSyncSessionProcess(processId: number): void
+  onStopSyncSessionProcess(processId: number): void;
 
-	onDownloadQuotaUpdate(downloadedQuota: number): void
+  onDownloadQuotaUpdate(downloadedQuota: number): void;
 
-	onAllMailboxesFinish(): Promise<void>
+  onAllMailboxesFinish(): Promise<void>;
 }
 
 export class ImapSyncSession implements SyncSessionEventListener {
-	private adSyncEventListener: AdSyncEventListener
-	private adSyncConfig: AdSyncConfig
-	private adSyncLogger: AdSyncLogger
-	private state: SyncSessionState
-	private imapSyncState?: ImapSyncState
-	private adSyncOptimizer?: AdSyncProcessesOptimizer
-	private runningSyncSessionProcesses: Map<number, ImapSyncSessionProcess> = new Map()
-	private downloadedQuotas: number[] = []
+  private adSyncEventListener: AdSyncEventListener;
+  private adSyncConfig: AdSyncConfig;
+  private adSyncLogger: AdSyncLogger;
+  private state: SyncSessionState;
+  private imapSyncState?: ImapSyncState;
+  private adSyncOptimizer?: AdSyncProcessesOptimizer;
+  private runningSyncSessionProcesses: Map<number, ImapSyncSessionProcess> = new Map();
+  private downloadedQuotas: number[] = [];
 
-	constructor(adSyncEventListener: AdSyncEventListener, adSyncConfig: AdSyncConfig, adSyncLogger: AdSyncLogger) {
-		this.adSyncEventListener = adSyncEventListener
-		this.adSyncConfig = adSyncConfig
-		this.state = SyncSessionState.PAUSED
-		this.adSyncLogger = adSyncLogger
-	}
+  constructor(adSyncEventListener: AdSyncEventListener, adSyncConfig: AdSyncConfig, adSyncLogger: AdSyncLogger) {
+    this.adSyncEventListener = adSyncEventListener;
+    this.adSyncConfig = adSyncConfig;
+    this.state = SyncSessionState.PAUSED;
+    this.adSyncLogger = adSyncLogger;
+  }
 
-	async startSyncSession(imapSyncState: ImapSyncState): Promise<void> {
-		if (this.state != SyncSessionState.RUNNING) {
-			this.state = SyncSessionState.RUNNING
-			this.imapSyncState = imapSyncState
-			this.runningSyncSessionProcesses = new Map()
-			this.downloadedQuotas = []
-			this.runSyncSession()
-		}
-		return
-	}
+  async startSyncSession(imapSyncState: ImapSyncState): Promise<void> {
+    if (this.state != SyncSessionState.RUNNING) {
+      this.state = SyncSessionState.RUNNING;
+      this.imapSyncState = imapSyncState;
+      this.runningSyncSessionProcesses = new Map();
+      this.downloadedQuotas = [];
+      this.runSyncSession();
+    }
+    return;
+  }
 
-	async stopSyncSession(): Promise<void> {
-		await this.shutDownSyncSession(false)
-		return
-	}
+  async stopSyncSession(): Promise<void> {
+    await this.shutDownSyncSession(false);
+    return;
+  }
 
-	private async shutDownSyncSession(isPostpone: boolean, postponeDuration: number = DEFAULT_POSTPONE_TIME) {
-		this.state = SyncSessionState.PAUSED
+  private async shutDownSyncSession(isPostpone: boolean, postponeDuration: number = DEFAULT_POSTPONE_TIME) {
+    this.state = SyncSessionState.PAUSED;
 
-		this.adSyncOptimizer?.stopAdSyncOptimizer()
-		this.runningSyncSessionProcesses.forEach((syncSessionProcess) => {
-			syncSessionProcess.stopSyncSessionProcess()
-		})
-		this.runningSyncSessionProcesses.clear()
+    this.adSyncOptimizer?.stopAdSyncOptimizer();
+    this.runningSyncSessionProcesses.forEach((syncSessionProcess) => {
+      syncSessionProcess.stopSyncSessionProcess();
+    });
+    this.runningSyncSessionProcesses.clear();
 
-		if (isPostpone) {
-			this.state = SyncSessionState.POSTPONED
-			this.adSyncEventListener.onPostpone(new Date(Date.now() + postponeDuration))
-		}
-	}
+    if (isPostpone) {
+      this.state = SyncSessionState.POSTPONED;
+      this.adSyncEventListener.onPostpone(new Date(Date.now() + postponeDuration));
+    }
+  }
 
-	private async runSyncSession() {
-		let mailboxes = await this.setupSyncSession()
+  private async runSyncSession() {
+    let mailboxes = await this.setupSyncSession();
 
-		if (mailboxes != null) {
-			if (this.adSyncConfig.isEnableParallelProcessesOptimizer) {
-				this.adSyncOptimizer = new AdSyncParallelProcessesOptimizer(
-					mailboxes,
-					this.adSyncConfig.parallelProcessesOptimizationDifference,
-					this,
-					this.adSyncLogger,
-				)
-			} else {
-				// start AdSyncSingleProcessesOptimizer with optimizationDifference of zero (0) (always open only a single mailbox (i.e. folder) at a time)
-				this.adSyncOptimizer = new AdSyncSingleProcessesOptimizer(mailboxes, this, this.adSyncLogger)
-			}
-			this.adSyncOptimizer.startAdSyncOptimizer()
-		}
-	}
+    if (mailboxes != null) {
+      if (this.adSyncConfig.isEnableParallelProcessesOptimizer) {
+        this.adSyncOptimizer = new AdSyncParallelProcessesOptimizer(
+          mailboxes,
+          this.adSyncConfig.parallelProcessesOptimizationDifference,
+          this.adSyncConfig.optimizationInterval,
+          this,
+          this.adSyncLogger
+        );
+      } else {
+        // start AdSyncSingleProcessesOptimizer with optimizationDifference of zero (0) (always open only a single mailbox (i.e. folder) at a time)
+        this.adSyncOptimizer = new AdSyncSingleProcessesOptimizer(mailboxes, this, this.adSyncLogger);
+      }
+      this.adSyncOptimizer.startAdSyncOptimizer();
+    }
+  }
 
-	private async setupSyncSession(): Promise<ImapSyncSessionMailbox[] | null> {
-		if (!this.imapSyncState) {
-			throw new Error("The ImapSyncState has not been set!")
-		}
+  private async setupSyncSession(): Promise<ImapSyncSessionMailbox[] | null> {
+    if (!this.imapSyncState) {
+      throw new Error('The ImapSyncState has not been set!');
+    }
 
-		let knownMailboxes = this.imapSyncState.imapMailboxStates.map((mailboxState) => {
-			return new ImapSyncSessionMailbox(mailboxState, this.adSyncConfig.defaultDownloadBatchSize)
-		})
+    let knownMailboxes = this.imapSyncState.imapMailboxStates.map((mailboxState) => {
+      return new ImapSyncSessionMailbox(mailboxState, this.adSyncConfig.defaultDownloadBatchSize, this.adSyncConfig.processesTimeToLive);
+    });
 
-		let imapAccount = this.imapSyncState.imapAccount
-		const imapClient = new ImapFlow({
-			host: imapAccount.host,
-			port: imapAccount.port,
-			secure: true,
-			tls: {
-				rejectUnauthorized: false, // TODO deactivate after testing
-			},
-			logger: false,
-			auth: {
-				user: imapAccount.username,
-				pass: imapAccount.password,
-				accessToken: imapAccount.accessToken,
-			},
-		})
+    let imapAccount = this.imapSyncState.imapAccount;
+    const imapClient = new ImapFlow({
+      host: imapAccount.host,
+      port: imapAccount.port,
+      secure: true,
+      tls: {
+        rejectUnauthorized: false // TODO deactivate after testing
+      },
+      logger: false,
+      auth: {
+        user: imapAccount.username,
+        pass: imapAccount.password,
+        accessToken: imapAccount.accessToken
+      }
+    });
 
-		try {
-			await imapClient.connect()
-			let listTreeResponse = await imapClient.listTree()
-			await imapClient.logout()
+    try {
+      await imapClient.connect();
+      let listTreeResponse = await imapClient.listTree();
+      await imapClient.logout();
 
-			let fetchedRootMailboxes = listTreeResponse.folders.map((listTreeResponse) => {
-				return ImapMailbox.fromImapFlowListTreeResponse(listTreeResponse, null)
-			})
-			return this.getSyncSessionMailboxes(knownMailboxes, fetchedRootMailboxes)
-		} catch (error) {
-			await this.shutDownSyncSession(true, ERROR_POSTPONE_TIME)
-			return null
-		}
-	}
+      let fetchedRootMailboxes = listTreeResponse.folders.map((listTreeResponse) => {
+        return ImapMailbox.fromImapFlowListTreeResponse(listTreeResponse, null);
+      });
+      return this.getSyncSessionMailboxes(knownMailboxes, fetchedRootMailboxes);
+    } catch (error) {
+      await this.shutDownSyncSession(true, ERROR_POSTPONE_TIME);
+      return null;
+    }
+  }
 
-	private getSyncSessionMailboxes(knownMailboxes: ImapSyncSessionMailbox[], fetchedRootMailboxes: ImapMailbox[]): ImapSyncSessionMailbox[] {
-		let resultMailboxes: ImapSyncSessionMailbox[] = []
-		fetchedRootMailboxes.forEach((fetchedRootMailbox) => {
-			resultMailboxes.push(...this.traverseImapMailboxes(knownMailboxes, fetchedRootMailbox))
-		})
+  private getSyncSessionMailboxes(knownMailboxes: ImapSyncSessionMailbox[], fetchedRootMailboxes: ImapMailbox[]): ImapSyncSessionMailbox[] {
+    let resultMailboxes: ImapSyncSessionMailbox[] = [];
+    fetchedRootMailboxes.forEach((fetchedRootMailbox) => {
+      resultMailboxes.push(...this.traverseImapMailboxes(knownMailboxes, fetchedRootMailbox));
+    });
 
-		knownMailboxes.map((knownMailbox) => {
-			let index = resultMailboxes.findIndex((mailbox) => {
-				return mailbox.mailboxState.path == knownMailbox.mailboxState.path
-			})
+    knownMailboxes.map((knownMailbox) => {
+      let index = resultMailboxes.findIndex((mailbox) => {
+        return mailbox.mailboxState.path == knownMailbox.mailboxState.path;
+      });
 
-			if (index == -1) {
-				let deletedImapMailbox = ImapMailbox.fromSyncSessionMailbox(knownMailbox)
-				this.adSyncEventListener.onMailbox(deletedImapMailbox, AdSyncEventType.DELETE)
-				return true
-			}
+      if (index == -1) {
+        let deletedImapMailbox = ImapMailbox.fromSyncSessionMailbox(knownMailbox);
+        this.adSyncEventListener.onMailbox(deletedImapMailbox, AdSyncEventType.DELETE);
+        return true;
+      }
 
-			return false
-		})
+      return false;
+    });
 
-		return resultMailboxes
-	}
+    return resultMailboxes;
+  }
 
-	private traverseImapMailboxes(knownMailboxes: ImapSyncSessionMailbox[], imapMailbox: ImapMailbox): ImapSyncSessionMailbox[] {
-		let result = []
+  private traverseImapMailboxes(knownMailboxes: ImapSyncSessionMailbox[], imapMailbox: ImapMailbox): ImapSyncSessionMailbox[] {
+    let result = [];
 
-		let syncSessionMailbox = knownMailboxes.find((value) => value.mailboxState.path == imapMailbox.path)
-		if (syncSessionMailbox === undefined) {
-			this.adSyncEventListener.onMailbox(imapMailbox, AdSyncEventType.CREATE)
-			syncSessionMailbox = new ImapSyncSessionMailbox(ImapMailboxState.fromImapMailbox(imapMailbox), this.adSyncConfig.defaultDownloadBatchSize)
-		}
+    let syncSessionMailbox = knownMailboxes.find((value) => value.mailboxState.path == imapMailbox.path);
+    if (syncSessionMailbox === undefined) {
+      this.adSyncEventListener.onMailbox(imapMailbox, AdSyncEventType.CREATE);
+      syncSessionMailbox = new ImapSyncSessionMailbox(ImapMailboxState.fromImapMailbox(imapMailbox), this.adSyncConfig.defaultDownloadBatchSize, this.adSyncConfig.processesTimeToLive);
+    }
 
-		if (imapMailbox.specialUse) {
-			syncSessionMailbox.specialUse = imapMailbox.specialUse
-		}
+    if (imapMailbox.specialUse) {
+      syncSessionMailbox.specialUse = imapMailbox.specialUse;
+    }
 
-		// some settings lead to importance "NO_SYNC" which means that the mailbox should not be imported / migrated
-		if (syncSessionMailbox.importance != SyncSessionMailboxImportance.NO_SYNC) {
-			result.push(syncSessionMailbox)
-		}
+    // some settings lead to importance "NO_SYNC" which means that the mailbox should not be imported / migrated
+    if (syncSessionMailbox.importance != SyncSessionMailboxImportance.NO_SYNC) {
+      result.push(syncSessionMailbox);
+    }
 
-		imapMailbox.subFolders?.forEach((imapMailbox) => {
-			result.push(...this.traverseImapMailboxes(knownMailboxes, imapMailbox))
-		})
-		return result
-	}
+    imapMailbox.subFolders?.forEach((imapMailbox) => {
+      result.push(...this.traverseImapMailboxes(knownMailboxes, imapMailbox));
+    });
+    return result;
+  }
 
-	onStartSyncSessionProcess(processId: number, nextMailboxToDownload: ImapSyncSessionMailbox): void {
-		if (this.state == SyncSessionState.RUNNING) {
-			console.log("onStartSyncSessionProcess : processId: " + processId + " -> " + nextMailboxToDownload.mailboxState.path)
-			this.adSyncLogger.writeToLog(
-				`${Date.now()}, onStartSyncSessionProcess, ${processId}, ${nextMailboxToDownload.mailboxState.path}\n`,
-				LogSourceType.GLOBAL,
-			)
+  onStartSyncSessionProcess(processId: number, nextMailboxToDownload: ImapSyncSessionMailbox): void {
+    if (this.state == SyncSessionState.RUNNING) {
+      console.log('onStartSyncSessionProcess : processId: ' + processId + ' -> ' + nextMailboxToDownload.mailboxState.path);
+      this.adSyncLogger.writeToLog(
+        `${Date.now()}, onStartSyncSessionProcess, ${processId}, ${nextMailboxToDownload.mailboxState.path}\n`,
+        LogSourceType.GLOBAL
+      );
 
-			if (!this.adSyncOptimizer) {
-				throw new Error("The SyncSessionEventListener should be exclusively used by the AdSyncEfficiencyScoreOptimizer!")
-			}
+      if (!this.adSyncOptimizer) {
+        throw new Error('The SyncSessionEventListener should be exclusively used by the AdSyncEfficiencyScoreOptimizer!');
+      }
 
-			if (!this.imapSyncState) {
-				throw new Error("The ImapSyncState has not been set!")
-			}
+      if (!this.imapSyncState) {
+        throw new Error('The ImapSyncState has not been set!');
+      }
 
-			let adSyncDownloadBlatchSizeOptimizer = new AdSyncDownloadBatchSizeOptimizer(
-				nextMailboxToDownload,
-				this.adSyncConfig.downloadBatchSizeOptimizationDifference,
-				this.adSyncLogger,
-			)
-			let syncSessionProcess = new ImapSyncSessionProcess(
-				processId,
-				adSyncDownloadBlatchSizeOptimizer,
-				this.adSyncOptimizer,
-				this.adSyncConfig,
-				this.adSyncLogger,
-			)
+      let adSyncDownloadBlatchSizeOptimizer = new AdSyncDownloadBatchSizeOptimizer(
+        nextMailboxToDownload,
+        this.adSyncConfig.downloadBatchSizeOptimizationDifference,
+        this.adSyncConfig.optimizationInterval,
+        this.adSyncLogger
+      );
+      let syncSessionProcess = new ImapSyncSessionProcess(
+        processId,
+        adSyncDownloadBlatchSizeOptimizer,
+        this.adSyncOptimizer,
+        this.adSyncConfig,
+        this.adSyncLogger
+      );
 
-			this.runningSyncSessionProcesses.set(syncSessionProcess.processId, syncSessionProcess)
-			syncSessionProcess.startSyncSessionProcess(this.imapSyncState.imapAccount, this.adSyncEventListener).then((state) => {
-				if (state == SyncSessionProcessState.CONNECTION_FAILED_REJECTED) {
-					this.adSyncOptimizer?.forceStopSyncSessionProcess(processId, true)
-				} else if (state == SyncSessionProcessState.CONNECTION_FAILED_UNKNOWN) {
-					this.adSyncOptimizer?.forceStopSyncSessionProcess(processId, false)
-				} else {
-					if (this.adSyncConfig.isEnableDownloadBatchSizeOptimizer && this.state == SyncSessionState.RUNNING) {
-						adSyncDownloadBlatchSizeOptimizer.startAdSyncOptimizer()
-						this.adSyncLogger.writeToLog(
-							`${Date.now()}, startAdSyncOptimizer, ${processId}, ${nextMailboxToDownload.mailboxState.path}\n`,
-							LogSourceType.GLOBAL,
-						)
-					}
-				}
-			})
-		}
-	}
+      this.runningSyncSessionProcesses.set(syncSessionProcess.processId, syncSessionProcess);
+      syncSessionProcess.startSyncSessionProcess(this.imapSyncState.imapAccount, this.adSyncEventListener).then((state) => {
+        if (state == SyncSessionProcessState.CONNECTION_FAILED_REJECTED) {
+          this.adSyncOptimizer?.forceStopSyncSessionProcess(processId, true);
+        } else if (state == SyncSessionProcessState.CONNECTION_FAILED_UNKNOWN) {
+          this.adSyncOptimizer?.forceStopSyncSessionProcess(processId, false);
+        } else {
+          if (this.adSyncConfig.isEnableDownloadBatchSizeOptimizer && this.state == SyncSessionState.RUNNING) {
+            adSyncDownloadBlatchSizeOptimizer.startAdSyncOptimizer();
+            this.adSyncLogger.writeToLog(
+              `${Date.now()}, startAdSyncOptimizer, ${processId}, ${nextMailboxToDownload.mailboxState.path}\n`,
+              LogSourceType.GLOBAL
+            );
+          }
+        }
+      });
+    }
+  }
 
-	onStopSyncSessionProcess(nextProcessIdToDrop: number): void {
-		console.log("onStopSyncSessionProcess : processId: " + nextProcessIdToDrop)
+  onStopSyncSessionProcess(nextProcessIdToDrop: number): void {
+    console.log('onStopSyncSessionProcess : processId: ' + nextProcessIdToDrop);
 
-		let syncSessionProcessToDrop = this.runningSyncSessionProcesses.get(nextProcessIdToDrop)
+    let syncSessionProcessToDrop = this.runningSyncSessionProcesses.get(nextProcessIdToDrop);
 
-		syncSessionProcessToDrop?.stopSyncSessionProcess()
-		this.runningSyncSessionProcesses.delete(nextProcessIdToDrop)
-	}
+    syncSessionProcessToDrop?.stopSyncSessionProcess();
+    this.runningSyncSessionProcesses.delete(nextProcessIdToDrop);
+  }
 
-	onDownloadQuotaUpdate(downloadedQuota: number): void {
-		this.downloadedQuotas.push(downloadedQuota)
+  onDownloadQuotaUpdate(downloadedQuota: number): void {
+    this.downloadedQuotas.push(downloadedQuota);
 
-		if (!this.imapSyncState) {
-			throw new Error("The ImapSyncState has not been set!")
-		}
+    if (!this.imapSyncState) {
+      throw new Error('The ImapSyncState has not been set!');
+    }
 
-		let downloadedQuotaTotal = this.downloadedQuotas.reduce((quotaSum, quota) => quotaSum + quota, 0)
-		if (downloadedQuotaTotal > this.imapSyncState.maxQuota - DOWNLOADED_QUOTA_SAFETY_THRESHOLD) {
-			this.shutDownSyncSession(true)
-		}
-	}
+    let downloadedQuotaTotal = this.downloadedQuotas.reduce((quotaSum, quota) => quotaSum + quota, 0);
+    if (downloadedQuotaTotal > this.imapSyncState.maxQuota - DOWNLOADED_QUOTA_SAFETY_THRESHOLD) {
+      this.shutDownSyncSession(true);
+    }
+  }
 
-	async onAllMailboxesFinish(): Promise<void> {
-		console.log("onAllMailboxesFinish")
-		if (this.state != SyncSessionState.FINISHED) {
-			this.state = SyncSessionState.FINISHED
-			await this.shutDownSyncSession(false)
+  async onAllMailboxesFinish(): Promise<void> {
+    console.log('onAllMailboxesFinish');
+    if (this.state != SyncSessionState.FINISHED) {
+      this.state = SyncSessionState.FINISHED;
+      await this.shutDownSyncSession(false);
 
-			let downloadedQuotaTotal = this.downloadedQuotas.reduce((quotaSum, quota) => quotaSum + quota, 0)
-			this.adSyncEventListener.onFinish(downloadedQuotaTotal)
-		}
-	}
+      let downloadedQuotaTotal = this.downloadedQuotas.reduce((quotaSum, quota) => quotaSum + quota, 0);
+      this.adSyncEventListener.onFinish(downloadedQuotaTotal);
+    }
+  }
 }
