@@ -86,7 +86,7 @@ export class AdSyncLogger {
         break;
     }
 
-    fs.appendFileSync(filepath, logText);
+    fs.writeFileSync(filepath, logText);
     return Promise.resolve();
   }
 

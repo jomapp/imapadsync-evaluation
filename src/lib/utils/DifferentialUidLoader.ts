@@ -14,7 +14,7 @@ export enum UidFetchRequestType {
 	WAIT,
 }
 
-export const UID_FETCH_REQUEST_WAIT_TIME = 5000 // in ms
+export const UID_FETCH_REQUEST_WAIT_TIME = 50 // in ms
 
 export interface UidFetchRequest {
 	uidFetchSequenceString: string

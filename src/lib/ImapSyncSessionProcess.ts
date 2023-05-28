@@ -55,7 +55,7 @@ export class ImapSyncSessionProcess {
       tls: {
         rejectUnauthorized: false // TODO deactivate after testing
       },
-      logger: false,
+      logger: true,
       auth: {
         user: imapAccount.username,
         pass: imapAccount.password,
