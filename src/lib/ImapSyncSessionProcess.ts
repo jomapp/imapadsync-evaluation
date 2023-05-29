@@ -154,8 +154,6 @@ export class ImapSyncSessionProcess {
 
         this.adSyncOptimizer.optimizedSyncSessionMailbox.reportDownloadBatchSizeUsage(nextUidFetchRequest.usedDownloadBatchSize);
 
-        let mailFetchStartTime = Date.now();
-
         let mails = imapClient.fetch(
           nextUidFetchRequest.uidFetchSequenceString,
           {
@@ -171,6 +169,7 @@ export class ImapSyncSessionProcess {
           fetchOptions
         );
 
+        let mailFetchStartTime = Date.now();
         // @ts-ignore
         for await (const mail of mails) {
           if (this.state == SyncSessionProcessState.STOPPED) {
@@ -221,6 +220,8 @@ export class ImapSyncSessionProcess {
           } else {
             adSyncEventListener.onError(new ImapError(`No IMAP mail source available for IMAP mail with UID ${mail.uid}.`));
           }
+
+          mailFetchStartTime = Date.now();
         }
 
         nextUidFetchRequest = await differentialUidLoader.getNextUidFetchRequest(this.adSyncOptimizer.optimizedSyncSessionMailbox.downloadBatchSize);
